@@ -151,13 +151,12 @@ export default function GenerarPlaylist({
                 favorites={favorites}
               />
 
-              <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
-                <h3 className="font-semibold mb-2">📊 Popularidad</h3>
-                <p className="text-sm text-gray-400">Widget de popularidad próximamente</p>
-                <div className="mt-2 text-xs text-gray-500">
-                  Rango: {preferences.popularity[0]}-{preferences.popularity[1]}
-                </div>
-              </div>
+              <Popularidad
+                selectedPopularity={preferences.popularity}
+                onSelect={(newPopularity) =>
+                  onPreferencesChange(prev => ({ ...prev, popularity: newPopularity }))
+                }
+              />
             </div>
 
             <button
