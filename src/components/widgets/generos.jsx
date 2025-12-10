@@ -26,7 +26,7 @@ const GENRES = [
   { value: 'k-pop', label: 'K-Pop', emoji: '🌸' },
 ];
 
-export default function GenresWidget({ selectedGenres = [], onSelect }) {
+export default function Generos({ selectedGenres = [], onSelect }) {
   const [selected, setSelected] = useState(selectedGenres);
 
   const toggleGenre = (genreValue) => {

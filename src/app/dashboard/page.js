@@ -4,20 +4,45 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { logout, isAuthenticated, getAccessToken } from '@/lib/auth';
-import DecadeWidget from '@/components/widgets/decada';
-import GenresWidget from '@/components/widgets/genres';
+import BarraLateral from '@/components/barraLateral';
+import GenerarPlaylist from '@/components/generarPlaylist';
+import BuscarCanciones from '@/components/buscarCanciones';
+import MisPlaylists from '@/components/misPlaylists';
+import CancionesFavoritas from '@/components/cancionesFavoritas';
+import { usarPlaylists } from '@/lib/usarPlaylists';
+import { usarCancionesFavoritas } from '@/lib/usarCancionesFavoritas';
 
 export default function DashboardPage() {
   const router = useRouter();
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [currentView, setCurrentView] = useState('generate');
+
+  // Hook para gestionar playlists locales
+  const {
+    playlists,
+    isLoaded: playlistsLoaded,
+    createPlaylist,
+    updatePlaylist,
+    deletePlaylist,
+    addTrackToPlaylist,
+    removeTrackFromPlaylist
+  } = usarPlaylists();
+
+  // Hook para gestionar canciones favoritas
+  const {
+    favorites,
+    isLoaded: favoritesLoaded,
+    addFavorite,
+    removeFavorite
+  } = usarCancionesFavoritas();
 
   // Estado para las preferencias de los widgets
   const [preferences, setPreferences] = useState({
     artists: [],
     tracks: [],
     genres: [],
-    decades: [], // ← Aquí se guardarán las décadas seleccionadas
+    decades: [],
     popularity: [0, 100],
     mood: null
   });
@@ -25,6 +50,8 @@ export default function DashboardPage() {
   // Estado para la playlist generada
   const [playlist, setPlaylist] = useState([]);
   const [generating, setGenerating] = useState(false);
+  const [sortBy, setSortBy] = useState('added');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -56,6 +83,106 @@ export default function DashboardPage() {
   const handleLogout = () => {
     logout();
     router.push('/');
+  };
+
+  const handleViewChange = (view) => {
+    setCurrentView(view);
+  };
+
+  const handleImportFromSpotify = async () => {
+    try {
+      const token = getAccessToken();
+      const response = await fetch('https://api.spotify.com/v1/me/playlists?limit=1', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        //console.log(data);
+        let importCount = 0;
+
+        for (const spotifyPlaylist of data.items) {
+          try {
+            // Obtener todas las canciones de la playlist primero
+            const tracksResponse = await fetch(
+              spotifyPlaylist.tracks.href,
+              {
+                headers: { 'Authorization': `Bearer ${token}` }
+              }
+            );
+
+            if (tracksResponse.ok) {
+              const tracksData = await tracksResponse.json();
+              console.log(tracksData);
+              const tracks = tracksData.items
+                .filter(item => item.track) // Filtrar items nulos
+                .map(item => ({
+                  id: item.track.id,
+                  name: item.track.name,
+                  artists: item.track.artists,
+                  album: item.track.album,
+                  duration_ms: item.track.duration_ms,
+                  popularity: item.track.popularity,
+                  uri: item.track.uri,
+                  external_urls: item.track.external_urls
+                }));
+
+              // Solo importar si tiene canciones
+              if (tracks.length > 0) {
+                // Crear la playlist localmente
+                const newPlaylist = createPlaylist(spotifyPlaylist.name, spotifyPlaylist.description || '');
+                
+                // Esperar a que se cree la playlist
+                setTimeout(() => {
+                  // Añadir todas las canciones a la playlist
+                  tracks.forEach(track => {
+                    addTrackToPlaylist(newPlaylist.id, track);
+                  });
+                }, 100);
+
+                importCount++;
+              }
+            }
+          } catch (error) {
+            console.error(`Error importing tracks for playlist ${spotifyPlaylist.name}:`, error);
+          }
+        }
+
+        if (importCount > 0) {
+          alert(`Se importaron ${importCount} playlists correctamente`);
+        } else {
+          alert('No se encontraron playlists con canciones para importar');
+        }
+      } else {
+        alert('Error al obtener las playlists. Verifica tus permisos.');
+      }
+    } catch (error) {
+      console.error('Error importing playlists:', error);
+      alert('Error al importar playlists: ' + error.message);
+    }
+  };
+
+  // Guardar playlist generada en Mis Playlists
+  const handleSaveGeneratedPlaylist = (playlistName, tracks) => {
+    if (tracks.length === 0) {
+      alert('No hay canciones para guardar');
+      return;
+    }
+
+    // Crear la playlist
+    const newPlaylist = createPlaylist(playlistName, 'Playlist generada con filtros');
+    
+    // Esperar un poco para que se cree
+    setTimeout(() => {
+      // Añadir todas las canciones
+      tracks.forEach(track => {
+        addTrackToPlaylist(newPlaylist.id, track);
+      });
+      
+      alert(`✅ Playlist "${playlistName}" guardada en Mis Playlists`);
+      // Limpiar la playlist generada
+      setPlaylist([]);
+    }, 100);
   };
 
   // ← Handler para actualizar décadas
@@ -97,10 +224,22 @@ export default function DashboardPage() {
         queryParts.push(`(${genreQueries.join(' OR ')})`);
       }
 
-      // Filtro por artistas
+      // Filtro por artistas (por ID, necesitamos obtener sus canciones)
+      let allTracks = [];
       if (preferences.artists.length > 0) {
-        const artistQueries = preferences.artists.map(artist => `artist:"${artist}"`);
-        queryParts.push(`(${artistQueries.join(' OR ')})`);
+        // Fetch tracks for each selected artist
+        for (const artistId of preferences.artists) {
+          const artistResponse = await fetch(
+            `https://api.spotify.com/v1/artists/${artistId}/top_tracks?market=ES`,
+            {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }
+          );
+          if (artistResponse.ok) {
+            const artistData = await artistResponse.json();
+            allTracks = allTracks.concat(artistData.tracks || []);
+          }
+        }
       }
 
       // Filtro por canciones específicas
@@ -110,7 +249,7 @@ export default function DashboardPage() {
       }
 
       // Si no hay filtros, busca canciones populares
-      if (queryParts.length === 0) {
+      if (queryParts.length === 0 && allTracks.length === 0) {
         query = 'genre:pop year:2020-2024';
       } else {
         query = queryParts.join(' ');
@@ -134,7 +273,20 @@ export default function DashboardPage() {
 
       if (searchResponse.ok) {
         const searchData = await searchResponse.json();
-        const tracks = searchData.tracks?.items || [];
+        let tracks = searchData.tracks?.items || [];
+        
+        // Si hay artistas seleccionados, combinar con las canciones obtenidas
+        if (allTracks.length > 0) {
+          tracks = [...tracks, ...allTracks];
+          // Remover duplicados por ID
+          const uniqueMap = new Map();
+          tracks.forEach(track => {
+            if (!uniqueMap.has(track.id)) {
+              uniqueMap.set(track.id, track);
+            }
+          });
+          tracks = Array.from(uniqueMap.values());
+        }
         
         if (tracks.length === 0) {
           alert('No se encontraron canciones con esos filtros. Intenta con otros parámetros.');
@@ -171,143 +323,72 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      {/* Header */}
-      <header className="bg-gray-800 border-b border-gray-700 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-green-500">🎵 Spotify Taste Mixer</h1>
-            {userProfile && (
-              <p className="text-sm text-gray-400 mt-1">
-                Hola, {userProfile.display_name}!
-              </p>
-            )}
-          </div>
-          <button
-            onClick={handleLogout}
-            className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg transition-colors"
-          >
-            Cerrar Sesión
-          </button>
-        </div>
-      </header>
+    <div className="min-h-screen bg-gray-900 text-white flex">
+      {/* Sidebar */}
+      <BarraLateral
+        currentView={currentView}
+        onViewChange={handleViewChange}
+        userProfile={userProfile}
+        onLogout={handleLogout}
+      />
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Columna de Widgets (2/3) */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-              <h2 className="text-xl font-bold mb-4 text-green-400">
-                🎸 Personaliza tu Playlist
-              </h2>
-              <p className="text-gray-400 mb-4">
-                Selecciona tus preferencias musicales usando los widgets de abajo
-              </p>
+      {/* Main Content */}
+      <main className="flex-1 ml-64 p-8">
+        {currentView === 'generate' && (
+          <GenerarPlaylist
+            preferences={preferences}
+            playlist={playlist}
+            generating={generating}
+            sortBy={sortBy}
+            searchQuery={searchQuery}
+            onPreferencesChange={setPreferences}
+            onGeneratePlaylist={handleGeneratePlaylist}
+            onPlaylistChange={setPlaylist}
+            onSortChange={setSortBy}
+            onSearchChange={setSearchQuery}
+            onSavePlaylist={handleSaveGeneratedPlaylist}
+            onAddFavorite={addFavorite}
+            onRemoveFavorite={removeFavorite}
+            favorites={favorites}
+            playlists={playlists}
+            onAddTrackToPlaylist={addTrackToPlaylist}
+          />
+        )}
 
-              {/* Grid de Widgets */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* ← GenresWidget integrado */}
-                <GenresWidget
-                  selectedGenres={preferences.genres}
-                  onSelect={handleGenreSelect}
-                />
+        {currentView === 'search' && (
+          <BuscarCanciones
+            playlists={playlists}
+            onAddTrackToPlaylist={addTrackToPlaylist}
+            favorites={favorites}
+            onAddFavorite={addFavorite}
+            onRemoveFavorite={removeFavorite}
+          />
+        )}
 
-                {/* ← DecadeWidget integrado */}
-                <DecadeWidget
-                  selectedDecades={preferences.decades}
-                  onSelect={handleDecadeSelect}
-                />
+        {currentView === 'favorites' && (
+          <CancionesFavoritas
+            favorites={favorites}
+            onRemoveFavorite={removeFavorite}
+            playlists={playlists}
+            onAddTrackToPlaylist={addTrackToPlaylist}
+          />
+        )}
 
-                {/* Widget de Artistas - Placeholder */}
-                <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
-                  <h3 className="font-semibold mb-2">🎤 Artistas</h3>
-                  <p className="text-sm text-gray-400">Widget de artistas aquí</p>
-                  <div className="mt-2 text-xs text-gray-500">
-                    Seleccionados: {preferences.artists.length}
-                  </div>
-                </div>
-
-                {/* Widget de Popularidad - Placeholder */}
-                <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
-                  <h3 className="font-semibold mb-2">📊 Popularidad</h3>
-                  <p className="text-sm text-gray-400">Widget de popularidad aquí</p>
-                  <div className="mt-2 text-xs text-gray-500">
-                    Rango: {preferences.popularity[0]}-{preferences.popularity[1]}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={handleGeneratePlaylist}
-                disabled={generating}
-                className="w-full mt-6 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 
-                         px-6 py-3 rounded-lg font-semibold transition-colors"
-              >
-                {generating ? 'Generando...' : '🎵 Generar Playlist'}
-              </button>
-            </div>
-          </div>
-
-          {/* Columna de Playlist (1/3) */}
-          <div className="lg:col-span-1">
-            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 sticky top-4">
-              <h2 className="text-xl font-bold mb-4 text-green-400">
-                🎧 Tu Playlist
-              </h2>
-              
-              {playlist.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="text-6xl mb-4">🎵</div>
-                  <p className="text-gray-400">
-                    Aún no hay canciones.
-                  </p>
-                  <p className="text-sm text-gray-500 mt-2">
-                    Selecciona tus preferencias y genera tu playlist personalizada
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {playlist.map((track, index) => (
-                    <div 
-                      key={track.id || index}
-                      className="bg-gray-700 rounded-lg p-3 border border-gray-600"
-                    >
-                      <div className="flex items-center gap-3">
-                        {track.album?.images?.[0] && (
-                          <img 
-                            src={track.album.images[0].url} 
-                            alt={track.name}
-                            className="w-12 h-12 rounded"
-                          />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold truncate">{track.name}</p>
-                          <p className="text-sm text-gray-400 truncate">
-                            {track.artists?.[0]?.name}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {playlist.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-gray-700">
-                  <div className="flex gap-2">
-                    <button className="flex-1 bg-green-600 hover:bg-green-700 px-3 py-2 rounded text-sm">
-                      🔄 Refrescar
-                    </button>
-                    <button className="flex-1 bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm">
-                      ➕ Añadir más
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+        {currentView === 'myPlaylists' && (
+          <MisPlaylists
+            playlists={playlists}
+            onCreatePlaylist={createPlaylist}
+            onDeletePlaylist={deletePlaylist}
+            onUpdatePlaylist={updatePlaylist}
+            onRemoveTrackFromPlaylist={removeTrackFromPlaylist}
+            onAddFavorite={addFavorite}
+            onRemoveFavorite={removeFavorite}
+            favorites={favorites}
+            onImportFromSpotify={handleImportFromSpotify}
+            onAddTrackToPlaylist={addTrackToPlaylist}
+          />
+        )}
+      </main>
     </div>
   );
 }

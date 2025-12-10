@@ -3,17 +3,17 @@
 import { useState } from 'react';
 
 const DECADES = [
-  { value: '1950', label: '1950s', emoji: '🎷' },
-  { value: '1960', label: '1960s', emoji: '🎸' },
-  { value: '1970', label: '1970s', emoji: '🕺' },
-  { value: '1980', label: '1980s', emoji: '🎹' },
-  { value: '1990', label: '1990s', emoji: '💿' },
-  { value: '2000', label: '2000s', emoji: '🎧' },
-  { value: '2010', label: '2010s', emoji: '📱' },
-  { value: '2020', label: '2020s', emoji: '🎵' }
+  { value: '1950', label: '1950s' },
+  { value: '1960', label: '1960s' },
+  { value: '1970', label: '1970s' },
+  { value: '1980', label: '1980s' },
+  { value: '1990', label: '1990s' },
+  { value: '2000', label: '2000s' },
+  { value: '2010', label: '2010s' },
+  { value: '2020', label: '2020s' }
 ];
 
-export default function DecadeWidget({ selectedDecades = [], onSelect }) {
+export default function Decadas({ selectedDecades = [], onSelect }) {
   const [selected, setSelected] = useState(selectedDecades);
 
   const toggleDecade = (decadeValue) => {
@@ -79,7 +79,6 @@ export default function DecadeWidget({ selectedDecades = [], onSelect }) {
                 }
               `}
             >
-              <span className="text-2xl">{decade.emoji}</span>
               <span className="text-sm font-semibold">{decade.label}</span>
             </button>
           );
@@ -98,7 +97,7 @@ export default function DecadeWidget({ selectedDecades = [], onSelect }) {
                   key={decadeValue}
                   className="px-2 py-1 bg-green-500/30 text-green-400 rounded text-xs flex items-center gap-1"
                 >
-                  {decade?.emoji} {decade?.label}
+                  {decade?.label}
                 </span>
               );
             })}
