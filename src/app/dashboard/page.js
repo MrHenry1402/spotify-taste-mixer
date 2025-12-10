@@ -1,8 +1,11 @@
+// src/app/dashboard/page.js
 'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { logout, isAuthenticated, getAccessToken } from '@/lib/auth';
+import DecadeWidget from '@/components/widgets/decada';
+import GenresWidget from '@/components/widgets/genres';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -14,7 +17,7 @@ export default function DashboardPage() {
     artists: [],
     tracks: [],
     genres: [],
-    decades: [],
+    decades: [], // ← Aquí se guardarán las décadas seleccionadas
     popularity: [0, 100],
     mood: null
   });
@@ -29,7 +32,6 @@ export default function DashboardPage() {
       return;
     }
 
-    // Obtener perfil del usuario
     fetchUserProfile();
   }, [router]);
 
@@ -56,21 +58,108 @@ export default function DashboardPage() {
     router.push('/');
   };
 
-  // Actualizar preferencias desde los widgets
-  const updatePreference = (key, value) => {
+  // ← Handler para actualizar décadas
+  const handleDecadeSelect = (selectedDecades) => {
     setPreferences(prev => ({
       ...prev,
-      [key]: value
+      decades: selectedDecades
     }));
+    console.log('Décadas seleccionadas:', selectedDecades);
   };
 
-  // Generar playlist (placeholder por ahora)
+  // ← Handler para actualizar géneros
+  const handleGenreSelect = (selectedGenres) => {
+    setPreferences(prev => ({
+      ...prev,
+      genres: selectedGenres
+    }));
+    console.log('Géneros seleccionados:', selectedGenres);
+  };
+
   const handleGeneratePlaylist = async () => {
     setGenerating(true);
-    // TODO: Implementar lógica de generación
-    setTimeout(() => {
+    try {
+      const token = getAccessToken();
+      
+      // Construir query string basado en los filtros
+      let query = '';
+      let queryParts = [];
+
+      // Filtro por décadas (años)
+      if (preferences.decades.length > 0) {
+        const yearQueries = preferences.decades.map(decade => `year:${decade}`);
+        queryParts.push(`(${yearQueries.join(' OR ')})`);
+      }
+
+      // Filtro por géneros
+      if (preferences.genres.length > 0) {
+        const genreQueries = preferences.genres.map(genre => `genre:"${genre}"`);
+        queryParts.push(`(${genreQueries.join(' OR ')})`);
+      }
+
+      // Filtro por artistas
+      if (preferences.artists.length > 0) {
+        const artistQueries = preferences.artists.map(artist => `artist:"${artist}"`);
+        queryParts.push(`(${artistQueries.join(' OR ')})`);
+      }
+
+      // Filtro por canciones específicas
+      if (preferences.tracks.length > 0) {
+        const trackQueries = preferences.tracks.map(track => `track:"${track}"`);
+        queryParts.push(`(${trackQueries.join(' OR ')})`);
+      }
+
+      // Si no hay filtros, busca canciones populares
+      if (queryParts.length === 0) {
+        query = 'genre:pop year:2020-2024';
+      } else {
+        query = queryParts.join(' ');
+      }
+
+      // Construir parámetros de búsqueda
+      const searchParams = new URLSearchParams({
+        q: query,
+        type: 'track',
+        limit: 20,
+        market: 'ES' // Puedes cambiar esto según el país del usuario
+      });
+
+      // Llamar a la API de búsqueda de Spotify
+      const searchResponse = await fetch(
+        `https://api.spotify.com/v1/search?${searchParams}`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
+      );
+
+      if (searchResponse.ok) {
+        const searchData = await searchResponse.json();
+        const tracks = searchData.tracks?.items || [];
+        
+        if (tracks.length === 0) {
+          alert('No se encontraron canciones con esos filtros. Intenta con otros parámetros.');
+          setPlaylist([]);
+        } else {
+          // Filtrar por rango de popularidad
+          const filtered = tracks.filter(track => {
+            const popularity = track.popularity || 0;
+            return popularity >= preferences.popularity[0] && 
+                   popularity <= preferences.popularity[1];
+          });
+
+          setPlaylist(filtered.length > 0 ? filtered : tracks.slice(0, 10));
+          console.log('Playlist generada:', filtered.length > 0 ? filtered : tracks);
+        }
+      } else {
+        console.error('Error en la búsqueda:', searchResponse.status);
+        alert('Error al generar la playlist. Intenta de nuevo.');
+      }
+    } catch (error) {
+      console.error('Error generando playlist:', error);
+      alert('Error al generar la playlist');
+    } finally {
       setGenerating(false);
-    }, 1000);
+    }
   };
 
   if (loading) {
@@ -117,25 +206,19 @@ export default function DashboardPage() {
 
               {/* Grid de Widgets */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Placeholder: GenreWidget */}
-                <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
-                  <h3 className="font-semibold mb-2">🎵 Géneros</h3>
-                  <p className="text-sm text-gray-400">Widget de géneros aquí</p>
-                  <div className="mt-2 text-xs text-gray-500">
-                    Seleccionados: {preferences.genres.length}
-                  </div>
-                </div>
+                {/* ← GenresWidget integrado */}
+                <GenresWidget
+                  selectedGenres={preferences.genres}
+                  onSelect={handleGenreSelect}
+                />
 
-                {/* Placeholder: DecadeWidget */}
-                <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
-                  <h3 className="font-semibold mb-2">📅 Décadas</h3>
-                  <p className="text-sm text-gray-400">Widget de décadas aquí</p>
-                  <div className="mt-2 text-xs text-gray-500">
-                    Seleccionadas: {preferences.decades.length}
-                  </div>
-                </div>
+                {/* ← DecadeWidget integrado */}
+                <DecadeWidget
+                  selectedDecades={preferences.decades}
+                  onSelect={handleDecadeSelect}
+                />
 
-                {/* Placeholder: ArtistWidget */}
+                {/* Widget de Artistas - Placeholder */}
                 <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
                   <h3 className="font-semibold mb-2">🎤 Artistas</h3>
                   <p className="text-sm text-gray-400">Widget de artistas aquí</p>
@@ -144,7 +227,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Placeholder: PopularityWidget */}
+                {/* Widget de Popularidad - Placeholder */}
                 <div className="bg-gray-700 rounded-lg p-4 border border-gray-600">
                   <h3 className="font-semibold mb-2">📊 Popularidad</h3>
                   <p className="text-sm text-gray-400">Widget de popularidad aquí</p>
