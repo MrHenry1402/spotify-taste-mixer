@@ -145,6 +145,19 @@ export default function MisPlaylists({
             </div>
             <div className="flex gap-2">
               <button
+                onClick={() => {
+                  // Recargar la playlist desde localStorage
+                  const playlistsData = JSON.parse(localStorage.getItem('spotify_playlists') || '[]');
+                  const updatedPlaylist = playlistsData.find(p => p.id === selectedPlaylist.id);
+                  if (updatedPlaylist) {
+                    setSelectedPlaylist(updatedPlaylist);
+                  }
+                }}
+                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white transition-colors"
+              >
+                🔄 Actualizar
+              </button>
+              <button
                 onClick={() => onDeletePlaylist(selectedPlaylist.id)}
                 className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-white transition-colors"
               >
