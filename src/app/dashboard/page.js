@@ -255,11 +255,14 @@ export default function DashboardPage() {
         query = queryParts.join(' ');
       }
 
-      // Construir parámetros de búsqueda
+      // Construir parámetros de búsqueda con offset aleatorio
+      // Esto permite obtener canciones diferentes en cada regeneración
+      const randomOffset = Math.floor(Math.random() * 50);
       const searchParams = new URLSearchParams({
         q: query,
         type: 'track',
         limit: 20,
+        offset: randomOffset,
         market: 'ES' // Puedes cambiar esto según el país del usuario
       });
 

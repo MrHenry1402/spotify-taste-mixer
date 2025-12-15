@@ -345,6 +345,13 @@ export default function GenerarPlaylist({
                     🗑️ Limpiar
                   </button>
                   <button
+                    onClick={onGeneratePlaylist}
+                    disabled={generating}
+                    className="w-full bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-600 px-3 py-2 rounded text-sm transition-colors"
+                  >
+                    {generating ? '⟳ Regenerando...' : '⟳ Regenerar Playlist'}
+                  </button>
+                  <button
                     onClick={handleSavePlaylist}
                     className="w-full bg-green-600 hover:bg-green-700 px-3 py-2 rounded text-sm transition-colors"
                   >
